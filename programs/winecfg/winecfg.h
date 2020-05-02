@@ -89,6 +89,9 @@ INT_PTR CALLBACK AudioDlgProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 INT_PTR CALLBACK ThemeDlgProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 INT_PTR CALLBACK AboutDlgProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
+/* set user path in registry */
+BOOL set_user_path_from_string(const char *path)
+
 /* Windows version management */
 BOOL set_winver_from_string(const char *version);
 void print_windows_versions(void);

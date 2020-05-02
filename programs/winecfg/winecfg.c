@@ -760,3 +760,9 @@ BOOL initialize(HINSTANCE hInstance)
 
     return FALSE;
 }
+
+BOOL set_user_path_from_string(const char *path)
+{
+    set_reg_key(HKEY_CURRENT_USER, L"Environment", L"PATH", path, REG_SZ);
+    return 0;
+}

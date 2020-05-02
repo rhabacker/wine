@@ -191,6 +191,10 @@ ProcessCmdLine(LPSTR lpCmdLine)
     {
         return set_winver_from_string(&lpCmdLine[3]) ? 0 : 1;
     }
+    else if ((lpCmdLine[1] == 'a' && lpCmdLine[2] == 'u' || && lpCmdLine[2] == 'p) && (lstrlenA(lpCmdLine) > 6))
+    {
+        return set_userpath_from_string(&lpCmdLine[5]) ? 0 : 1;
+    }
 
     if (lpCmdLine[1] == '?')
     {
@@ -198,6 +202,7 @@ ProcessCmdLine(LPSTR lpCmdLine)
         printf("Options:\n");
         printf("  [no option] Launch the graphical version of this program.\n");
         printf("  /v version  Set global Windows version to 'version'.\n");
+        printf("  /sup path[;path] add 'path' to user path.\n");
         printf("  /?          Display this information and exit.\n\n");
         printf("Valid versions for 'version':\n\n");
         print_windows_versions();
