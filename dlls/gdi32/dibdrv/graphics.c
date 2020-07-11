@@ -313,12 +313,93 @@ static int get_arc_points( int arc_dir, const RECT *rect, POINT start, POINT end
     return pos - count;
 }
 
+static int xform_patchlevel = 2;
+
 /*
  Check if matrix has uniform scale and shear and contains a rotation.
 */
 BOOL xform_has_rotate_and_uniform_scale_and_shear( const XFORM *xform )
 {
-    return xform->eM21 != 0 && xform->eM11 == xform->eM22 && -xform->eM21 == xform->eM12;
+    static BOOL first = TRUE;
+    if (first)
+    {
+        char *env = getenv("WINE_XFORM_PATCHLEVEL");
+        if (env)
+            xform_patchlevel = atoi(env);
+        first = FALSE;
+        TRACE("WINE_XFORM_PATCHLEVEL=%d detected\n", xform_patchlevel);
+    }
+
+    if (xform_patchlevel == 2)
+        return TRUE;
+    else if (xform_patchlevel == 0)
+        return FALSE;
+    else
+        return xform->eM21 != 0 && xform->eM11 == xform->eM22 && -xform->eM21 == xform->eM12;
+}
+
+BOOL xform_decompose_rotation_and_translation_level2( XFORM *A, XFORM *Q )
+{
+    if ( Q == NULL )
+        return TRUE;
+
+    if (A->eM11 || A->eM12)
+    {
+        XFORM qt, R;
+        Q->eM11 = A->eM11;
+        Q->eM21 = -A->eM12;
+        Q->eM12 = A->eM12;
+        Q->eM22 = A->eM11;
+        Q->eDx = A->eDx;
+        Q->eDy = A->eDy;
+        //  QT = Q^-1
+        qt = *A;
+        qt.eM21 = A->eM12;
+        qt.eM12 = A->eM21;
+        //  Q^-1 * A =R
+        R.eM11 = qt.eM11 * A->eM11 + qt.eM21 * A->eM12;
+        R.eM12 = qt.eM12 * A->eM11 + qt.eM22 * A->eM12;
+        R.eM21 = qt.eM11 * A->eM21 + qt.eM21 * A->eM22;
+        R.eM22 = qt.eM12 * A->eM21 + qt.eM22 * A->eM22;
+        R.eDx = 0;
+        R.eDy = 0;
+//        TRACE_MATRIX("Case 1: A", A);
+//        TRACE_MATRIX("Qt", &qt);
+//        TRACE_MATRIX("R", &R);
+        *A = R;
+        return TRUE;
+    }
+    else if (A->eM21 || A->eM22)
+    {
+        XFORM qt, R;
+        Q->eM11 = A->eM22;
+        Q->eM21 = A->eM21;
+        Q->eM12 = -A->eM21;
+        Q->eM22 = A->eM22;
+        Q->eDx = A->eDx;
+        Q->eDy = A->eDy;
+        //  QT = Q^-1
+        qt = *A;
+        qt.eM21 = A->eM12;
+        qt.eM12 = A->eM21;
+        //  Q^-1 * A = R
+        R.eM11 = qt.eM11 * A->eM11 + qt.eM21 * A->eM12;
+        R.eM12 = qt.eM12 * A->eM11 + qt.eM22 * A->eM12;
+        R.eM21 = qt.eM11 * A->eM21 + qt.eM21 * A->eM22;
+        R.eM22 = qt.eM12 * A->eM21 + qt.eM22 * A->eM22;
+        R.eDx = 0;
+        R.eDy = 0;
+//        TRACE_MATRIX("Case 2: A", A);
+//        TRACE_MATRIX("Qt", &qt);
+//        TRACE_MATRIX("R", &R);
+        *A = R;
+        return TRUE;
+    }
+    else
+    {
+//        TRACE_MATRIX("Case 3: A", A);
+        return FALSE;
+    }
 }
 
 /*
@@ -335,6 +416,9 @@ BOOL xform_decompose_rotation_and_translation( XFORM *xform, XFORM *rotation_and
     XFORM inverse_matrix_scale;
     XFORM origin_matrix = *xform;
     double determinant = 0;
+
+    if (xform_patchlevel == 2)
+        return xform_decompose_rotation_and_translation_level2( xform, rotation_and_translation );
 
     /* xform = xfrom-transposed * xform */
     xform->eM11 = sqrt( xform->eM11 * xform->eM11 + xform->eM21 * xform->eM21 );
