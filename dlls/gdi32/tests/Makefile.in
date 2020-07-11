@@ -14,6 +14,7 @@ C_SRCS = \
 	icm.c \
 	mapping.c \
 	metafile.c \
+	misc.c \
 	palette.c \
 	path.c \
 	pen.c
