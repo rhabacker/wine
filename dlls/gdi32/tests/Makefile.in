@@ -2,6 +2,7 @@ TESTDLL   = gdi32.dll
 IMPORTS   = user32 gdi32 advapi32
 
 C_SRCS = \
+	advanced.c \
 	bitmap.c \
 	brush.c \
 	clipping.c \
