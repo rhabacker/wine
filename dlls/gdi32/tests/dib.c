@@ -3529,11 +3529,443 @@ static void test_simple_graphics(void)
     DeleteDC(mem_dc);
 }
 
+typedef struct {
+    const char *name;
+    double shear_x;
+    double angle;
+    const char *sha1;
+} ref_hash_table_entry;
+
+typedef struct {
+    HDC dc;
+    BITMAPINFO *bmi;
+    BYTE *bits;
+    HBITMAP dib;
+    char *hash_dib;
+    char test_name[1024];
+    char save_path[MAX_PATH];
+    char hash_name[1024];
+    RECT bounds;
+    double angle;
+    double shear_x;
+} test_data;
+
+/* generated on Windows 10 */
+static const ref_hash_table_entry ref_hash_table[] = {
+    { "LineTo", 0.000000, 0.000000, "4fd2ef41c2dfe9e0373d5560e715adcb0996e1e8" },
+    { "Rectangle", 0.000000, 0.000000, "7dfd17a8b871745eb3a9835282c4cdea05a4fdf5" },
+    { "Ellipse", 0.000000, 0.000000, "7764ca19f379333b001015d2eaba1fdbc9610f91" },
+    { "Arc", 0.000000, 0.000000, "fea4743713de7fe8368f037b2d466746c6f2ac08" },
+    { "ArcTo", 0.000000, 0.000000, "9b852a42f2bfb034ba7cc5a7c5dee87ac95f3e1f" },
+    { "Chord", 0.000000, 0.000000, "221091b6ab38d14cfa6c55723846a91e90931786" },
+    { "Pie", 0.000000, 0.000000, "221091b6ab38d14cfa6c55723846a91e90931786" },
+    { "FillRect", 0.000000, 0.000000, "877e47e0f729ebf3d104952b43aecf3553a5cf56" },
+    { "LineTo", 0.000000, 45.000000, "80844d5f61676fb2ebb73327062a1701896936a0" },
+    { "Rectangle", 0.000000, 45.000000, "5a0ae6674ee810a77e2a13cdd31c848bd22bd544" },
+    { "Ellipse", 0.000000, 45.000000, "0436cc3a83510ff3225015698139b58550f8173a" },
+    { "Arc", 0.000000, 45.000000, "64e2e1b3fb6193967d6b0cebc035005e31482ff0" },
+    { "ArcTo", 0.000000, 45.000000, "765509b0d3eb2948695cf6943f72e748b586f82c" },
+    { "Chord", 0.000000, 45.000000, "e46c2b398042b50f982d476d497b6e6df4f2e28e" },
+    { "Pie", 0.000000, 45.000000, "e46c2b398042b50f982d476d497b6e6df4f2e28e" },
+    { "FillRect", 0.000000, 45.000000, "037c5c46a074199cbb8a0dc437ff8070adcf0857" },
+    { "LineTo", 0.000000, 135.000000, "55bbdaaa60cd5cd6060de6ae74aefce5a5905981" },
+    { "Rectangle", 0.000000, 135.000000, "93076b33a2f4f4c1deb1a9cda02198256189dd26" },
+    { "Ellipse", 0.000000, 135.000000, "158c242f8fd8201aea9db5d2cbbb8df66d9bb84a" },
+    { "Arc", 0.000000, 135.000000, "36e4fc5f5b8ebca82ff7f1bf9e44fcca2bea2fb4" },
+    { "ArcTo", 0.000000, 135.000000, "d77507e50bb8b1c9f47e2cad3c2736a86b3a1c2e" },
+    { "Chord", 0.000000, 135.000000, "dd0cee27348ae37e06fee0d94210c22eae21a048" },
+    { "Pie", 0.000000, 135.000000, "dd0cee27348ae37e06fee0d94210c22eae21a048" },
+    { "FillRect", 0.000000, 135.000000, "bc6e6959ce46c428aaa131319a9c812e4152853a" },
+    { "LineTo", 0.000000, 180.000000, "1d6de1d092eae2e7ebb258694ffb151e9d1aa7b7" },
+    { "Rectangle", 0.000000, 180.000000, "df184a46b2ba9c590c87e2f714098b8900ad04d6" },
+    { "Ellipse", 0.000000, 180.000000, "c3384f3878407b66e44dbc653b862717e2bf0757" },
+    { "Arc", 0.000000, 180.000000, "d8973a8ad0b3addd277b1000704632df4238b947" },
+    { "ArcTo", 0.000000, 180.000000, "0cdc9ec20534887fc7af2142f085d2f8b82328bc" },
+    { "Chord", 0.000000, 180.000000, "fdbe8ed965ef07376481ee1eb6cfd070e851bcac" },
+    { "Pie", 0.000000, 180.000000, "fdbe8ed965ef07376481ee1eb6cfd070e851bcac" },
+    { "FillRect", 0.000000, 180.000000, "094f61b22c7e89588387a7c699dcc675d51b2d91" },
+
+    { "LineTo", 0.100000, 0.000000, "baa3c953aa781a0ae454225c56fc8f9197a9e34e" },
+    { "Rectangle", 0.100000, 0.000000, "bc3eb8b8e43f53043cb906b94987702724c1d5db" },
+    { "Ellipse", 0.100000, 0.000000, "8ec7278136f64b773e4796c7bc189e68e24db2e6" },
+    { "Arc", 0.100000, 0.000000, "b339b7623a66268184bff55692e51308bbfa507c" },
+    { "ArcTo", 0.100000, 0.000000, "15aaf44926d59ecf1da6ceb2ce09f0963c7e5390" },
+    { "Chord", 0.100000, 0.000000, "a6c63982ac7344e63228c2c42d7143cdd7d8db39" },
+    { "Pie", 0.100000, 0.000000, "a6c63982ac7344e63228c2c42d7143cdd7d8db39" },
+    { "FillRect", 0.100000, 0.000000, "f67c061ce20cfc04f981df9741b6e3c24bae1ebf" },
+    { "LineTo", 0.100000, 45.000000, "0e2445a6cbaf29d34a81ba97c830a65dc9335f23" },
+    { "Rectangle", 0.100000, 45.000000, "689c1cb2bd1e6e7a5aefb07e9fabf79c10263866" },
+    { "Ellipse", 0.100000, 45.000000, "393020c0a32b96a8425b0a8a1bbd232189310d45" },
+    { "Arc", 0.100000, 45.000000, "e3fdaf73aa95ebcd28856d65c4e4f6238ca5a5ca" },
+    { "ArcTo", 0.100000, 45.000000, "da003ea969d1bde1145605533dfd765350e68d9d" },
+    { "Chord", 0.100000, 45.000000, "7919d114493f7f83e500f2866a786f6d9cdeb147" },
+    { "Pie", 0.100000, 45.000000, "7919d114493f7f83e500f2866a786f6d9cdeb147" },
+    { "FillRect", 0.100000, 45.000000, "41e4a69344a66012a919e2b27bd8f5d27bacab04" },
+    { "LineTo", 0.100000, 90.000000, "b9877b0324c5d8d9e9a86e09c9176effd6af2e69" },
+    { "Rectangle", 0.100000, 90.000000, "c9ed79cce52372b0bef9960b0069ab09c5f15379" },
+    { "Ellipse", 0.100000, 90.000000, "0e3206af4e0a8793d020fbcfff5308d62d9a9bbd" },
+    { "Arc", 0.100000, 90.000000, "8f63bba05d73f7659bd5d6b0197f23fa2b936296" },
+    { "ArcTo", 0.100000, 90.000000, "22ca17fe3d517c2c0551e93e904a7a3aa1eb0a3a" },
+    { "Chord", 0.100000, 90.000000, "a6ac92337383b50cddee9353c8e5d0180ec0b179" },
+    { "Pie", 0.100000, 90.000000, "a6ac92337383b50cddee9353c8e5d0180ec0b179" },
+    { "FillRect", 0.100000, 90.000000, "99f4cbdb52964d928dba5df88f99718c630d8466" },
+    { "LineTo", 0.100000, 135.000000, "55bbdaaa60cd5cd6060de6ae74aefce5a5905981" },
+    { "Rectangle", 0.100000, 135.000000, "c48e983ed0a1227ce0fad88eddfc006f855bd3ba" },
+    { "Ellipse", 0.100000, 135.000000, "6131ee3c533de430de646cbb1ccb4d2de589bca7" },
+    { "Arc", 0.100000, 135.000000, "48d7c821537f999b0262962af2d18f393fdbed22" },
+    { "ArcTo", 0.100000, 135.000000, "3f2f0ab0bb18d8d69f46edf4b2aaf674cab29918" },
+    { "Chord", 0.100000, 135.000000, "c565f5b7c0278fba5857440f0e1a6ee343e190ff" },
+    { "Pie", 0.100000, 135.000000, "c565f5b7c0278fba5857440f0e1a6ee343e190ff" },
+    { "FillRect", 0.100000, 135.000000, "3c478057a81e481615f80f065ea4a1d4f8802021" },
+    { "LineTo", 0.100000, 180.000000, "22bdb237d85c07bb4562b3986b0e2ec4ad5b8a90" },
+    { "Rectangle", 0.100000, 180.000000, "9ce44b82738e8a6d1953afde80236b24951678ee" },
+    { "Ellipse", 0.100000, 180.000000, "5cec57ec097586fc5275fc8778fb635a4df65d32" },
+    { "Arc", 0.100000, 180.000000, "993e236ffb96abcc5e0e2ce6b8eaa75e05921333" },
+    { "ArcTo", 0.100000, 180.000000, "2ca8064a14bfb062fa3d4024eebcd7cc94665455" },
+    { "Chord", 0.100000, 180.000000, "072c89c1a2595d8e99eefd69bf7f2c1929934c99" },
+    { "Pie", 0.100000, 180.000000, "072c89c1a2595d8e99eefd69bf7f2c1929934c99" },
+    { "FillRect", 0.100000, 180.000000, "9dd444be3937fcd9ff414dc2b8c9186e45697076" },
+/* interactive */
+    { "LineTo", 0.000000, 30.000000, "5b114b9b7d5422dac77508cf561e9f46b779c63a" },
+    { "Rectangle", 0.000000, 30.000000, "71a1ba67b6c8b96bb0785734f6e59759167f311c" },
+    { "Ellipse", 0.000000, 30.000000, "095e6add22e8e850304152b009aad03070f5700c" },
+    { "Arc", 0.000000, 30.000000, "8c7f9bf14d68c263fd0be427628ad5a47af5ab92" },
+    { "ArcTo", 0.000000, 30.000000, "7d6b7c8589b6beee073cfc7f30ee7a66092630d0" },
+    { "Chord", 0.000000, 30.000000, "b182fa35ffc3b63d415c3024333799c6b4195aaa" },
+    { "Pie", 0.000000, 30.000000, "b182fa35ffc3b63d415c3024333799c6b4195aaa" },
+    { "FillRect", 0.000000, 30.000000, "79f54ab207afeb8fb7ccc64dd222cae3d43c0454" },
+    { "LineTo", 0.000000, 60.000000, "d59a48a4cc8b528ee23c598df4163ae451240582" },
+    { "Rectangle", 0.000000, 60.000000, "8f203b915de9942751c6c7dbe64eeff9617dce6e" },
+    { "Ellipse", 0.000000, 60.000000, "fdeba07d4e07787b9c014097123b19e173272564" },
+    { "Arc", 0.000000, 60.000000, "1fe918dc0349de6fb8b25c7dfb453e5039868f07" },
+    { "ArcTo", 0.000000, 60.000000, "490fef90e731d2745826167f851bfedfedb17c32" },
+    { "Chord", 0.000000, 60.000000, "76e4c30a8031f41f5a4c4eb3025306ca72856179" },
+    { "Pie", 0.000000, 60.000000, "76e4c30a8031f41f5a4c4eb3025306ca72856179" },
+    { "FillRect", 0.000000, 60.000000, "a7f00485c5ca9f772b1ea6df15bfbb191e088af4" },
+    { "LineTo", 0.000000, 90.000000, "d555e5a94fdb7cd438bf791bb5496660e6f5b3e4" },
+    { "Rectangle", 0.000000, 90.000000, "53f1de2c148917affcffe25901427de2528d1f33" },
+    { "Ellipse", 0.000000, 90.000000, "77f7068eff91ba547a277e7f1cf1c6b0c58feece" },
+    { "Arc", 0.000000, 90.000000, "0100a40d978d3468c3869efb28ee78b79e9ac28c" },
+    { "ArcTo", 0.000000, 90.000000, "fa33a4bf59af3fec4cf1af0caf740134e701587c" },
+    { "Chord", 0.000000, 90.000000, "5f51b144f123ac82d4ceb061a763af7718d0ad57" },
+    { "Pie", 0.000000, 90.000000, "5f51b144f123ac82d4ceb061a763af7718d0ad57" },
+    { "FillRect", 0.000000, 90.000000, "4c97c178892098154a78749576917f1974ae0642" },
+    { "LineTo", 0.000000, 120.000000, "ea59644b1f5908c44cb7cade4d474a2f714d6f2d" },
+    { "Rectangle", 0.000000, 120.000000, "758787fe602d117d65cc46301b24756f1e72c4eb" },
+    { "Ellipse", 0.000000, 120.000000, "47f873ebc9ca562bbf790ef338a22d4ef3849d91" },
+    { "Arc", 0.000000, 120.000000, "772a592aa7e9069900de5e6e4c13c7823e4531e4" },
+    { "ArcTo", 0.000000, 120.000000, "9785fdd2df63e702da0ce66a855744d82a4f7370" },
+    { "Chord", 0.000000, 120.000000, "72790e3be1f5d3df5578c7451345317d766ec303" },
+    { "Pie", 0.000000, 120.000000, "72790e3be1f5d3df5578c7451345317d766ec303" },
+    { "FillRect", 0.000000, 120.000000, "d14f7b3ab63bf89eb2d8e0deaf103c65ad7b79a3" },
+    { "LineTo", 0.000000, 150.000000, "371daccf7add2bce0de8b0ec20f1e5ac7379d4ca" },
+    { "Rectangle", 0.000000, 150.000000, "cb046a9299e337e6bdc270986a1006df81608650" },
+    { "Ellipse", 0.000000, 150.000000, "599a5bec049aeeb004bf1a2ccde88fc8729a2726" },
+    { "Arc", 0.000000, 150.000000, "3c58506a6700bd99235a0353a35dacc7249485f0" },
+    { "ArcTo", 0.000000, 150.000000, "f59ca59f92a63a97744761e1ec3717077d0f9442" },
+    { "Chord", 0.000000, 150.000000, "27d2c9dbe9675d70cb0c429802da9d2e44385de0" },
+    { "Pie", 0.000000, 150.000000, "27d2c9dbe9675d70cb0c429802da9d2e44385de0" },
+    { "FillRect", 0.000000, 150.000000, "a807bffafaa74d092a1f23131c09b72a79c9164b" },
+    { "LineTo", 0.100000, 30.000000, "5283bbbde19515586bd08d6008adedb1e391c946" },
+    { "Rectangle", 0.100000, 30.000000, "9f75a948bfdad207aeaf9854298b0fbfbe017fe9" },
+    { "Ellipse", 0.100000, 30.000000, "8c7a7b0c3f5c0fe5f42f25a4d78ff3525438e82b" },
+    { "Arc", 0.100000, 30.000000, "70895f509313460a6641c3f25582fc68c9ba5652" },
+    { "ArcTo", 0.100000, 30.000000, "f566a8ac08c9f9e36e77e16c9f952721d6822d6b" },
+    { "Chord", 0.100000, 30.000000, "fc3bdc578bbc8a33ca01acb52bcb4be866d98868" },
+    { "Pie", 0.100000, 30.000000, "fc3bdc578bbc8a33ca01acb52bcb4be866d98868" },
+    { "FillRect", 0.100000, 30.000000, "b4fbb4d12ee61e10289082ffaa4cd58ff9271ee2" },
+    { "LineTo", 0.100000, 60.000000, "3fa54cd80b94d7e61c677dcbaefb927612679c15" },
+    { "Rectangle", 0.100000, 60.000000, "6415184eeeeb985db2049e4bf8be869397db26cc" },
+    { "Ellipse", 0.100000, 60.000000, "007e094d6db47745d8436086a0a24e9da98b5137" },
+    { "Arc", 0.100000, 60.000000, "719b81e32e2672a0f3adcf4d095d68033d60f4c1" },
+    { "ArcTo", 0.100000, 60.000000, "266cdf1829837a92dc525fde5b281577f22f62d2" },
+    { "Chord", 0.100000, 60.000000, "0c56b384011f96bc309a4bc1cbed08fec51b9d5a" },
+    { "Pie", 0.100000, 60.000000, "0c56b384011f96bc309a4bc1cbed08fec51b9d5a" },
+    { "FillRect", 0.100000, 60.000000, "e203834924cac7929a998b8ee4914943b94b8f7b" },
+    { "LineTo", 0.100000, 120.000000, "5a218e4533c11f0137813a483b83469e5bc9f272" },
+    { "Rectangle", 0.100000, 120.000000, "0630eb459f6c5634a96567537eb7add9c062f7ff" },
+    { "Ellipse", 0.100000, 120.000000, "9823b51b405b5ae7647f2fd33491397a06a13644" },
+    { "Arc", 0.100000, 120.000000, "f163d0fc823cb00dfca7e9d86ad316c3df5dc7b0" },
+    { "ArcTo", 0.100000, 120.000000, "8b4a52c051b4cd36841b68ed419d0981ac214c29" },
+    { "Chord", 0.100000, 120.000000, "d5c8ad44f3a4a7e37df1b58ce35565aa6fb81938" },
+    { "Pie", 0.100000, 120.000000, "d5c8ad44f3a4a7e37df1b58ce35565aa6fb81938" },
+    { "FillRect", 0.100000, 120.000000, "111163a546305f3dfff58f447bf763a1f8690064" },
+    { "LineTo", 0.100000, 150.000000, "837dba89923d94d1a8ce3bc8fe73e6a65b058299" },
+    { "Rectangle", 0.100000, 150.000000, "535fea9f81dc44394326f2e499926d9e4e5ef095" },
+    { "Ellipse", 0.100000, 150.000000, "5c2d6ba0dd1e81a32fbfa07652bfd21a3b5620f7" },
+    { "Arc", 0.100000, 150.000000, "fa40fec084b7c9a641a75e8c6ae2a9b74cb36adc" },
+    { "ArcTo", 0.100000, 150.000000, "7a0d70cef05dfeed94f74e5cfe16f70955c3fbf5" },
+    { "Chord", 0.100000, 150.000000, "ef0d60b2152b399c44bb4cb0b793799e9759c277" },
+    { "Pie", 0.100000, 150.000000, "ef0d60b2152b399c44bb4cb0b793799e9759c277" },
+    { "FillRect", 0.100000, 150.000000, "062ee355971a58a72746747c9fce17ef9bf24ecb" },
+    { NULL, 0.0, 0.0, NULL },
+};
+
+static double radians ( double d )
+{
+    return d * M_PI / 180;
+}
+
+static BOOL save_bitmap_to_file( HBITMAP handle_bitmap, LPSTR file_name )
+{
+    HDC dc;
+    int bits;
+    WORD bit_count;
+    DWORD palette_size = 0, bm_bits_size = 0, dib_size = 0, written = 0;
+    BITMAP bitmap;
+    BITMAPFILEHEADER bitmap_file_header;
+    BITMAPINFOHEADER bi;
+    LPBITMAPINFOHEADER lpbi;
+    HANDLE fh, handle_dib, handle_pal, handle_old_pal = NULL;
+
+    dc = CreateDCA( "DISPLAY", NULL, NULL, NULL) ;
+    bits = GetDeviceCaps( dc, BITSPIXEL ) * GetDeviceCaps( dc, PLANES );
+    DeleteDC( dc) ;
+    if (bits <= 1)
+        bit_count = 1;
+    else if (bits <= 4)
+        bit_count = 4;
+    else if (bits <= 8)
+        bit_count = 8;
+    else
+        bit_count = 24;
+    GetObjectA( handle_bitmap, sizeof(bitmap), (LPSTR)&bitmap) ;
+    bi.biSize = sizeof(BITMAPINFOHEADER);
+    bi.biWidth = bitmap.bmWidth;
+    bi.biHeight = -bitmap.bmHeight;
+    bi.biPlanes = 1;
+    bi.biBitCount = bit_count;
+    bi.biCompression = BI_RGB;
+    bi.biSizeImage = 0;
+    bi.biXPelsPerMeter = 0;
+    bi.biYPelsPerMeter = 0;
+    bi.biClrImportant = 0;
+    bi.biClrUsed = 256;
+    bm_bits_size = ((bitmap.bmWidth * bit_count + 31) & ~31) / 8 * bitmap.bmHeight;
+    handle_dib = GlobalAlloc( GHND, bm_bits_size + palette_size + sizeof(BITMAPINFOHEADER) );
+    lpbi = (LPBITMAPINFOHEADER)GlobalLock(handle_dib);
+    *lpbi = bi;
+
+    handle_pal = GetStockObject( DEFAULT_PALETTE );
+    if ( handle_pal )
+    {
+        dc = GetDC( NULL );
+        handle_old_pal = SelectPalette( dc, (HPALETTE)handle_pal, FALSE );
+        RealizePalette( dc );
+    }
+
+    GetDIBits( dc, handle_bitmap, 0, (UINT)bitmap.bmHeight, (LPSTR)lpbi + sizeof(BITMAPINFOHEADER)
+        + palette_size, (BITMAPINFO *)lpbi, DIB_RGB_COLORS );
+
+    if ( handle_old_pal )
+    {
+        SelectPalette( dc, (HPALETTE)handle_old_pal, TRUE );
+        RealizePalette (dc );
+        ReleaseDC( NULL, dc );
+    }
+
+    fh = CreateFileA( file_name, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, NULL );
+
+    if ( fh == INVALID_HANDLE_VALUE )
+        return FALSE;
+
+    bitmap_file_header.bfType = 0x4D42; /* "BM" */
+    dib_size = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + palette_size + bm_bits_size;
+    bitmap_file_header.bfSize = dib_size;
+    bitmap_file_header.bfReserved1 = 0;
+    bitmap_file_header.bfReserved2 = 0;
+    bitmap_file_header.bfOffBits = (DWORD)sizeof(BITMAPFILEHEADER) + (DWORD)sizeof(BITMAPINFOHEADER) + palette_size;
+
+    WriteFile( fh, (LPSTR)&bitmap_file_header, sizeof(BITMAPFILEHEADER), &written, NULL );
+    WriteFile( fh, (LPSTR)lpbi, dib_size, &written, NULL );
+
+    GlobalUnlock( handle_dib );
+    GlobalFree( handle_dib );
+    CloseHandle( fh );
+    return TRUE;
+}
+
+static void set_transform( HDC dc, RECT *bounds, double angle, double shear_x )
+{
+    XFORM xf;
+    double r = radians( angle );
+    xf.eM11 = cos( r ) + sin( r ) * shear_x;
+    xf.eM22 = cos( r );
+    xf.eM12 = -sin( r );
+    xf.eM21 = sin( r ) + cos( r ) * shear_x;
+    xf.eDx = ( bounds->right - bounds->left ) / 4;
+    xf.eDy = ( bounds->bottom - bounds->top ) / 4;
+    SetWorldTransform( dc, &xf );
+}
+
+static void init( test_data *td, const char *test_name )
+{
+    sprintf( td->test_name, "%s", test_name );
+    sprintf( td->save_path, "%s-%3.1f-%2.1f.bmp", td->test_name, td->shear_x, td->angle );
+    sprintf( td->hash_name, "\"%s\", %3.1f, %2.1f", td->test_name, td->shear_x, td->angle );
+    reset_bits( td->dc, td->bmi, td->bits );
+    MoveToEx( td->dc, -5, 0, NULL );
+    LineTo( td->dc, 5, 0 );
+    MoveToEx( td->dc, 0, 5, NULL );
+    LineTo( td->dc, 0, -5 );
+}
+
+static const char *find_hash( test_data *td )
+{
+    const ref_hash_table_entry *p = ref_hash_table;
+    for( ; p->name != NULL; p++ ) {
+        if ( strcmp( p->name, td->test_name ) != 0
+                || p->shear_x != td->shear_x
+                || p->angle != td->angle )
+            continue;
+        return p->sha1;
+    }
+    return NULL;
+}
+
+static void check_hash( test_data *td )
+{
+    const char *hash;
+    if ( td->hash_dib )
+        HeapFree( GetProcessHeap(), 0, td->hash_dib );
+    td->hash_dib = hash_dib( td->dc, td->bmi, td->bits );
+    hash = find_hash( td );
+    if ( hash == NULL)
+        skip( "{ \"%s\", %lf, %lf, \"%s\" },\n", td->test_name, td->shear_x, td->angle, td->hash_dib );
+    else if( strcmp( td->hash_dib, hash ) != 0 ) {
+        ok( FALSE, "%s: expected hash %s got %s\n", td->hash_name, hash, td->hash_dib );
+    }
+    if ( winetest_interactive ) {
+        trace( "image saved as '%s'\n", td->save_path );
+        save_bitmap_to_file( td->dib, td->save_path );
+    }
+}
+
+static void test_gdi_advanced( test_data *td, double angle, double shear_x )
+{
+    char bmibuf[sizeof( BITMAPINFO ) + 256 * sizeof( RGBQUAD )];
+    HBITMAP orig_bm;
+    HPALETTE default_palette, old_hpal;
+    RECT r;
+
+    td->bmi = ( BITMAPINFO * )bmibuf;
+    td->dc = CreateCompatibleDC( NULL );
+    td->angle = angle;
+    td->shear_x = shear_x;
+
+    SetGraphicsMode( td->dc, GM_ADVANCED );
+    set_transform( td->dc, &td->bounds, td->angle, td->shear_x);
+
+    memset( td->bmi, 0, sizeof( bmibuf ));
+    td->bmi->bmiHeader.biSize = sizeof( td->bmi->bmiHeader );
+    td->bmi->bmiHeader.biHeight = td->bounds.right;
+    td->bmi->bmiHeader.biWidth = td->bounds.bottom;
+    td->bmi->bmiHeader.biBitCount = 32;
+    td->bmi->bmiHeader.biPlanes = 1;
+    td->bmi->bmiHeader.biCompression = BI_RGB;
+
+    td->dib = CreateDIBSection( 0, td->bmi, DIB_RGB_COLORS, ( void** )&( td->bits ), NULL, 0 );
+    orig_bm = SelectObject( td->dc, td->dib );
+
+    default_palette = create_default_palette( 8 );
+    old_hpal = SelectPalette( td->dc, default_palette, FALSE );
+
+    current_bounds = &td->bounds;
+    SetBoundsRect( td->dc, &td->bounds, DCB_SET );
+
+    SetRect( &r, 0, 0, 128, 128 );
+
+    init( td, "LineTo" );
+    MoveToEx( td->dc, r.left, r.top, NULL );
+    LineTo( td->dc, r.right, r.bottom );
+    check_hash( td );
+
+    init( td, "Rectangle" );
+    ok( Rectangle( td->dc, r.left, r.top, r.right, r.bottom ), td->test_name );
+    check_hash( td );
+
+    init( td, "Ellipse" );
+    ok( Ellipse( td->dc, r.left, r.top, r.right, r.bottom ), td->test_name );
+    check_hash( td );
+
+    init( td, "Arc" );
+    ok( Arc( td->dc, r.left, r.top, r.right, r.bottom, r.left+10, r.top, r.right-10, r.bottom ), td->test_name );
+    check_hash( td );
+
+    init( td, "ArcTo" );
+    ok( ArcTo( td->dc, r.left, r.top, r.right, r.bottom, r.left+10, r.top, r.right-10, r.bottom ), td->test_name );
+    check_hash( td );
+
+    init( td, "Chord" );
+    ok( Chord( td->dc, r.left, r.top, r.right, r.bottom, r.left+10, r.top, r.right-10, r.bottom ), td->test_name );
+    check_hash( td );
+
+    init( td, "Pie" );
+    ok( Pie( td->dc, r.left, r.top, r.right, r.bottom, r.left+10, r.top, r.right-10, r.bottom ), td->test_name );
+    check_hash( td );
+
+    init( td, "FillRect" );
+    ok( FillRect( td->dc, &r, GetStockObject( WHITE_BRUSH )), td->test_name );
+    check_hash( td );
+
+    SelectObject( td->dc, orig_bm );
+    DeleteObject( td->dib );
+    SelectPalette( td->dc, old_hpal, FALSE );
+    DeleteDC( td->dc );
+}
+
+static void test_advanced_graphics( void )
+{
+    test_data _test_data;
+    test_data *td = &_test_data;
+    int save = winetest_mute_threshold;
+    winetest_mute_threshold = 256;
+
+    td->bounds.left = 0;
+    td->bounds.top = 0;
+    td->bounds.right = 256;
+    td->bounds.bottom = 256;
+
+    if ( !winetest_interactive )
+        trace("advanced graphics mode: Use environment variable WINETEST_INTERACTIVE=1 to get images\n");
+
+    trace("advanced graphics mode: no shear\n");
+    test_gdi_advanced( td, 0, 0.0 );
+    test_gdi_advanced( td, 45, 0.0 );
+    test_gdi_advanced( td, 90, 0.0 );
+    test_gdi_advanced( td, 135, 0.0 );
+    test_gdi_advanced( td, 180, 0.0 );
+
+    if ( winetest_interactive ) {
+        test_gdi_advanced( td, 30, 0.0 );
+        test_gdi_advanced( td, 60, 0.0 );
+        test_gdi_advanced( td, 120, 0.0 );
+        test_gdi_advanced( td, 150, 0.0 );
+    }
+
+    trace("advanced graphics mode: with shear\n");
+    test_gdi_advanced( td, 0, 0.1 );
+    test_gdi_advanced( td, 45, 0.1 );
+    test_gdi_advanced( td, 90, 0.1 );
+    test_gdi_advanced( td, 135, 0.1 );
+    test_gdi_advanced( td, 180, 0.1 );
+
+    if ( winetest_interactive ) {
+        test_gdi_advanced( td, 30, 0.1 );
+        test_gdi_advanced( td, 60, 0.1 );
+        test_gdi_advanced( td, 120, 0.1 );
+        test_gdi_advanced( td, 150, 0.1 );
+    }
+    winetest_mute_threshold = save;
+}
+
 START_TEST(dib)
 {
     CryptAcquireContextW(&crypt_prov, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT);
 
     test_simple_graphics();
+    test_advanced_graphics();
 
     CryptReleaseContext(crypt_prov, 0);
 }
