@@ -25,6 +25,7 @@ typedef struct {
     RECT bounds;
     double angle;
     double shearX;
+    BOOL drawOrigin;
 } TestData;
 
 TestData test_data;
@@ -56,14 +57,17 @@ BOOL save_bitmap( TestData *td)
 void init( TestData *td , const char *test_name)
 {
     sprintf(td->test_name, "%s", test_name);
-    sprintf(td->save_path, "%s-%3.1f-%2.1f.bmp", td->test_name, td->shearX, td->angle);
+    sprintf(td->save_path, "%s-%3.1f-%3.1f.bmp", td->test_name, td->angle, td->shearX );
     sprintf(td->hash_name, "sha1_advanced_%s_%3.1f_%2.1f", td->test_name, td->shearX, td->angle);
-    trace("%s\n", td->test_name);
+    //trace("%s\n", td->test_name);
     reset_bits( td->dc, td->bmi, td->bits );
-    MoveToEx( td->dc, -5, 0, NULL);
-    LineTo( td->dc, 5, 0);
-    MoveToEx( td->dc, 0, 5, NULL);
-    LineTo( td->dc, 0, -5);
+    if (td->drawOrigin)
+    {
+        MoveToEx( td->dc, -5, 0, NULL);
+        LineTo( td->dc, 5, 0);
+        MoveToEx( td->dc, 0, 5, NULL);
+        LineTo( td->dc, 0, -5);
+    }
 }
 
 void check_hash( TestData *td )
@@ -121,8 +125,12 @@ static void test_gdi(double angle, double shearX)
     ok(Rectangle(td->dc, r.left, r.top, r.right, r.bottom), td->test_name);
     check_hash( td );
 
-    init( td, "Ellipse" );
+    init( td, "Ellipse-(Circle)" );
     ok(Ellipse(td->dc, r.left, r.top, r.right, r.bottom), td->test_name);
+    check_hash( td );
+
+    init( td, "Ellipse" );
+    ok(Ellipse(td->dc, r.left-20, r.top, r.right+20, r.bottom), td->test_name);
     check_hash( td );
 
     init( td, "Arc" );
@@ -158,6 +166,7 @@ static void test_gdi(double angle, double shearX)
 
 static void test_advanced_graphics()
 {
+    td->drawOrigin = FALSE;
     td->bounds.left = 0;
     td->bounds.top = 0;
     td->bounds.right = 256;
@@ -168,9 +177,13 @@ static void test_advanced_graphics()
     test_gdi(60, 0.0);
     test_gdi(90, 0.0);
     test_gdi(0, 0.1);
-    test_gdi(30, 0.1);
+    test_gdi(30, 0.);
     test_gdi(60, 0.1);
     test_gdi(90, 0.1);
+    test_gdi(0, 0.2);
+    test_gdi(30, 0.2);
+    test_gdi(60, 0.2);
+    test_gdi(90, 0.2);
 }
 
 START_TEST(advanced)
