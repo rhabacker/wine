@@ -1222,7 +1222,7 @@ int WINAPI bind( SOCKET s, const struct sockaddr *addr, int len )
             break;
 
         case AF_UNIX:
-            if (len < sizeof(ADDRESS_FAMILY))
+            if (len < offsetof(struct sockaddr_un, sun_path))
             {
                 SetLastError( WSAEFAULT );
                 return -1;
