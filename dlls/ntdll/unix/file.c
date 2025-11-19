@@ -3611,8 +3611,11 @@ static NTSTATUS lookup_unix_name( int root_fd, OBJECT_ATTRIBUTES *attr, UNICODE_
         {
             int reparse_fd;
 
-            memcpy( reparse_name, name, (end - name) * sizeof(WCHAR) );
-            reparse_name[end - name] = '?';
+            size_t nlen = end - name;
+            WCHAR* reparse_name = malloc((nlen + 2) * sizeof(WCHAR)); // +1 for '?' +1 for '\0'
+            memcpy(reparse_name, name, nlen * sizeof(WCHAR));
+            reparse_name[nlen] = '?';
+            reparse_name[nlen + 1] = 0;   // terminate
 
             if (!name_len && open_reparse)
             {
