@@ -1974,7 +1974,16 @@ struct fd *open_fd( struct fd *root, const char *name, struct unicode_str nt_nam
     }
     else rw_mode = O_RDONLY;
 
-    if ((fd->unix_fd = open( name, rw_mode | (flags & ~O_TRUNC), *mode )) == -1)
+    if (S_ISSOCK(st.st_mode))
+    {
+        fd->unix_fd = open(name, O_PATH | O_CLOEXEC);
+    }
+    else
+    {
+        fd->unix_fd = open( name, rw_mode | (flags & ~O_TRUNC), *mode );
+    }
+
+    if (fd->unix_fd == -1)
     {
         /* if we tried to open a directory for write access, retry read-only */
         if (errno == EISDIR)
