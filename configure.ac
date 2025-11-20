@@ -1548,6 +1548,32 @@ WINE_NOTICE_WITH(sane,[test "$ac_cv_lib_sane_sane_init" != "yes"],
                  [libsane ${notice_platform}development files not found, scanners won't be supported.],
                  [enable_sane_ds])
 
+dnl **** Check for lttng ****
+AC_ARG_ENABLE([lttng],
+    [AS_HELP_STRING([--enable-lttng], [Enable LTTng tracing])],
+    [enable_lttng=$enableval],
+    [enable_lttng=no])
+
+lttng_status="not found"
+
+if test "x$enable_lttng" = "xyes"; then
+    AC_CHECK_PROG([LTTNG_GEN_TP], [lttng-gen-tp], [lttng-gen-tp], [no])
+    if test "x$LTTNG_GEN_TP" != "xno"; then
+        AC_CHECK_LIB([lttng-ust], [lttng_ust_init_thread],
+            [AC_DEFINE([HAVE_LTTNG], [1], [Enable LTTng tracing])
+             LTTNG_LIBS="-llttng-ust"
+             lttng_status="found"],
+            [lttng_status="not found"])
+    fi
+fi
+
+AC_MSG_RESULT([checking for LTTng tracing support: $lttng_status])
+WINE_WARNING_WITH([lttng], [test "x$HAVE_LTTNG" == "x1"],
+                  [LTTng UST development files not found, tracing support will be disabled.])
+
+AC_SUBST([LTTNG_GEN_TP])
+AC_SUBST([LTTNG_LIBS])
+
 dnl **** Check for libusb ****
 if test "x$with_usb" != "xno"
 then

@@ -49,9 +49,20 @@ SOURCES = \
 	wineserver.de.UTF-8.man.in \
 	wineserver.fr.UTF-8.man.in \
 	wineserver.man.in \
-	winstation.c
+	winstation.c \
+	lttng-server-tp.c
+
 
 UNIX_CFLAGS = $(INOTIFY_CFLAGS)
-UNIX_LIBS   = $(LDEXECFLAGS) $(RT_LIBS) $(INOTIFY_LIBS) $(PROCSTAT_LIBS)
+UNIX_LIBS   = $(LDEXECFLAGS) $(RT_LIBS) $(INOTIFY_LIBS) $(PROCSTAT_LIBS) $(LTTNG_LIBS)
 
 unicode_EXTRADEFS = -DBINDIR="\"${bindir}\"" -DDATADIR="\"${datadir}\""
+
+ifdef HAVE_LTTNG
+GENDEPENDS = lttng-server-tp.c: lttng-server.tp
+
+EXTRA_SRCS = lttng-server-tp.c
+
+lttng-server-tp.c lttng-server-tp.h: lttng-server.tp
+	$(LTTNG_GEN_TP) $(SRCDIR)/lttng-server.tp -o $(SRCDIR)/lttng-server-tp.c -o $(SRCDIR)/lttng-server-tp.h
+endif

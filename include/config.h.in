@@ -222,6 +222,9 @@
 /* Define to 1 if you have the <linux/wireless.h> header file. */
 #undef HAVE_LINUX_WIRELESS_H
 
+/* Enable LTTng tracing */
+#undef HAVE_LTTNG
+
 /* Define to 1 if you have the <lwp.h> header file. */
 #undef HAVE_LWP_H
 

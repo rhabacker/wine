@@ -1,0 +1,13 @@
+/* Wineserver events */
+LTTNG_UST_TRACEPOINT_EVENT(
+    wine,
+    server,
+    LTTNG_UST_TP_ARGS(
+        const char *, event,
+        const char *, details
+    ),
+    LTTNG_UST_TP_FIELDS(
+        ctf_string(event, event)
+        ctf_string(details, details)
+    )
+)
