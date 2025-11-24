@@ -33,6 +33,7 @@
 # include <mach-o/dyld.h>
 #endif
 
+#include "debug.h"
 #include "windef.h"
 #include "winternl.h"
 #include "request.h"
@@ -348,7 +349,7 @@ struct fd *load_intl_file(void)
                            FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT ))) break;
         free( path );
     }
-    if (!fd) fatal_error( "failed to load l_intl.nls\n" );
+    if (!fd) TRACE( "failed to load l_intl.nls\n" );
     unix_fd = get_unix_fd( fd );
     /* read initial offset */
     if (pread( unix_fd, &data, sizeof(data), 0 ) != sizeof(data) || !data) goto failed;
@@ -367,5 +368,5 @@ struct fd *load_intl_file(void)
     return fd;
 
 failed:
-    fatal_error( "invalid format for casemap table %s\n", path );
+    TRACE( "invalid format for casemap table %s\n", path );
 }
