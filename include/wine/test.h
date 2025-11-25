@@ -679,7 +679,7 @@ void winetest_print_unlock(void)
 
 int winetest_vprintf( const char *msg, va_list args )
 {
-    return vprintf( msg, args );
+    return vfprintf( stderr, msg, args );
 }
 
 int winetest_get_time(void)
