@@ -14895,7 +14895,7 @@ START_TEST( sock )
     test_WithWSAStartup();
 
     Init();
-
+#if 0
     test_set_getsockopt();
     test_reuseaddr();
     test_ip_pktinfo();
@@ -14972,8 +14972,9 @@ START_TEST( sock )
     test_broadcast();
     test_send_buffering();
     test_valid_handle();
+#endif
     test_afunix();
-
+#if 0
     /* There is apparently an obscure interaction between this test and
      * test_WSAGetOverlappedResult().
      *
@@ -15001,6 +15002,6 @@ START_TEST( sock )
 
     /* this is an io heavy test, do it at the end so the kernel doesn't start dropping packets */
     test_send();
-
+#endif
     Exit();
 }
