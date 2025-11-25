@@ -1564,7 +1564,7 @@ void trace_request(void)
     enum request req = current->req.request_header.req;
     if (req < REQ_NB_REQUESTS)
     {
-        TRACE_RAW( "%04x: %s(", current->id, req_names[req] );
+        TRACE_RAW( "%04x:trace:server:%s(", current->id, req_names[req] );
         if (req_dumpers[req])
         {
             cur_data = get_req_data();
@@ -1573,15 +1573,15 @@ void trace_request(void)
         }
         TRACE_RAW( " )\n" );
     }
-    else TRACE_RAW( "%04x: %d(?)\n", current->id, req );
+    else TRACE_RAW( "%04x:trace:server:%d(?)\n", current->id, req );
 }
 
 void trace_reply( enum request req, const union generic_reply *reply )
 {
     if (req < REQ_NB_REQUESTS)
     {
-        TRACE_RAW( "%04x: %s() = %s",
-                 current->id, req_names[req], get_status_name(current->error) );
+        TRACE_RAW( "%04x:trace:server:%s() = %s",
+               current->id, req_names[req], get_status_name(current->error) );
         if (reply_dumpers[req])
         {
             TRACE_RAW( " {" );
@@ -1592,6 +1592,6 @@ void trace_reply( enum request req, const union generic_reply *reply )
         }
         fputc( '\n', stderr );
     }
-    else TRACE_RAW( "%04x: %d() = %s\n",
-                  current->id, req, get_status_name(current->error) );
+    else TRACE_RAW( "%04x:trace:server:%d() = %s\n",
+                current->id, req, get_status_name(current->error) );
 }
