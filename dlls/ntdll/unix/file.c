@@ -3530,11 +3530,13 @@ static NTSTATUS lookup_unix_name( int root_fd, OBJECT_ATTRIBUTES *attr, UNICODE_
     static const WCHAR invalid_charsW[] = { INVALID_NT_CHARS, '/', 0 };
     const WCHAR *name = attr->ObjectName->Buffer + nt_pos;
     unsigned int name_len = (attr->ObjectName->Length / sizeof(WCHAR)) - nt_pos;
-    NTSTATUS status;
+    NTSTATUS status = 0;
     int ret;
     struct stat st;
     char *unix_name = *buffer;
     const WCHAR *ptr, *end;
+
+    TRACE( "%d %d\n", __LINE__, status);
 
     /* check syntax of individual components */
 
@@ -3560,6 +3562,7 @@ static NTSTATUS lookup_unix_name( int root_fd, OBJECT_ATTRIBUTES *attr, UNICODE_
         }
     }
 
+    TRACE( "%d %d\n", __LINE__, status);
     /* try a shortcut first */
 
     unix_name[pos] = '/';
@@ -3571,13 +3574,19 @@ static NTSTATUS lookup_unix_name( int root_fd, OBJECT_ATTRIBUTES *attr, UNICODE_
         for (p = unix_name + pos ; *p; p++) if (*p == '\\') *p = '/';
         if (!fstatat( root_fd, unix_name, &st, 0 ))
         {
-            if (disposition == FILE_CREATE) return STATUS_OBJECT_NAME_COLLISION;
+            TRACE( "%d %d\n", __LINE__, status);
+
+            if (disposition == FILE_CREATE)
+                return STATUS_OBJECT_NAME_COLLISION;
             return STATUS_SUCCESS;
         }
     }
 
+    TRACE( "%d %d\n", __LINE__, status);
     if (!name_len)  /* empty name -> drive root doesn't exist */
         return STATUS_OBJECT_PATH_NOT_FOUND;
+    TRACE( "%d %d\n", __LINE__, status);
+
     if (is_unix && (disposition == FILE_OPEN || disposition == FILE_OVERWRITE))
         return STATUS_OBJECT_NAME_NOT_FOUND;
 
@@ -3605,6 +3614,7 @@ static NTSTATUS lookup_unix_name( int root_fd, OBJECT_ATTRIBUTES *attr, UNICODE_
         }
 
         status = find_file_in_dir( root_fd, unix_name, pos, name, end - name, is_unix );
+        TRACE( "%d %d\n", __LINE__, status);
 
         /* try to resolve it as a reparse point */
         if (status == STATUS_OBJECT_NAME_NOT_FOUND && (reparse_name = malloc( (end - name + 1) * sizeof(WCHAR) )))
@@ -3619,21 +3629,28 @@ static NTSTATUS lookup_unix_name( int root_fd, OBJECT_ATTRIBUTES *attr, UNICODE_
 
             if (!name_len && open_reparse)
             {
+                TRACE( "%d %d\n", __LINE__, status);
                 status = find_file_in_dir( root_fd, unix_name, pos, reparse_name, end - name + 1, is_unix );
             }
             else
             {
+                TRACE( "%d %d\n", __LINE__, status);
+
                 if (!find_file_in_dir( root_fd, unix_name, pos, reparse_name, end - name + 1, is_unix )
                     && (reparse_fd = openat( root_fd, unix_name, O_RDONLY )) >= 0)
                 {
+                    TRACE( "%d %d\n", __LINE__, status);
+
                     status = resolve_reparse_point( reparse_fd, root_fd, attr, nt_name, nt_pos, next - name, buffer,
                                                     unix_len, pos, disposition, open_reparse, is_unix, reparse_count );
                     close( reparse_fd );
                     free( reparse_name );
+                    TRACE( "%d %d\n", __LINE__, status);
                     return status;
                 }
             }
         }
+    TRACE( "%d %d\n", __LINE__, status);
 
         /* if this is the last element, not finding it is not necessarily fatal */
         if (!name_len)
@@ -3668,6 +3685,7 @@ static NTSTATUS lookup_unix_name( int root_fd, OBJECT_ATTRIBUTES *attr, UNICODE_
         nt_pos += next - name;
         name = next;
     }
+    TRACE( "%d %d\n", __LINE__, status);
 
     return status;
 }
@@ -3692,6 +3710,8 @@ static NTSTATUS nt_to_unix_file_name_no_root( OBJECT_ATTRIBUTES *attr, UNICODE_S
     WCHAR prefix[MAX_DIR_ENTRY_LEN + 1];
     BOOLEAN is_unix = FALSE;
 
+    TRACE( "%s\n", debugstr_us(attr->ObjectName));
+
     name     = attr->ObjectName->Buffer;
     name_len = attr->ObjectName->Length / sizeof(WCHAR);
 
@@ -3700,11 +3720,14 @@ static NTSTATUS nt_to_unix_file_name_no_root( OBJECT_ATTRIBUTES *attr, UNICODE_S
     if (!(nt_pos = get_dos_prefix_len( attr->ObjectName )))
         return STATUS_BAD_DEVICE_TYPE;  /* no DOS prefix, assume NT native name */
 
+    TRACE( "%d\n", __LINE__);
+
     name += nt_pos;
     name_len -= nt_pos;
 
     if (!name_len) return STATUS_OBJECT_NAME_INVALID;
 
+    TRACE( "%d\n", __LINE__);
     /* check for sub-directory */
     for (pos = 0; pos < name_len && pos <= MAX_DIR_ENTRY_LEN; pos++)
     {
@@ -3714,6 +3737,8 @@ static NTSTATUS nt_to_unix_file_name_no_root( OBJECT_ATTRIBUTES *attr, UNICODE_S
         prefix[pos] = (name[pos] >= 'A' && name[pos] <= 'Z') ? name[pos] + 'a' - 'A' : name[pos];
     }
     if (pos > MAX_DIR_ENTRY_LEN) return STATUS_OBJECT_NAME_INVALID;
+
+    TRACE( "%d\n", __LINE__);
 
     if (pos >= 4 && !memcmp( prefix, unixW, sizeof(unixW) ))
     {
@@ -3735,6 +3760,7 @@ static NTSTATUS nt_to_unix_file_name_no_root( OBJECT_ATTRIBUTES *attr, UNICODE_S
     if (ret <= 0)
     {
         free( unix_name );
+        TRACE( "%d\n", __LINE__);
         return STATUS_OBJECT_NAME_INVALID;
     }
 
@@ -3742,6 +3768,8 @@ static NTSTATUS nt_to_unix_file_name_no_root( OBJECT_ATTRIBUTES *attr, UNICODE_S
     {
         unix_name[pos + ret] = 0;
         *unix_name_ret = unix_name;
+        TRACE( "%d\n", __LINE__);
+
         return get_dos_device( unix_name_ret, pos );
     }
     pos += ret;
@@ -3751,6 +3779,7 @@ static NTSTATUS nt_to_unix_file_name_no_root( OBJECT_ATTRIBUTES *attr, UNICODE_S
     if (wcschr( prefix, '/' ))
     {
         free( unix_name );
+        TRACE( "%d\n", __LINE__);
         return STATUS_OBJECT_PATH_NOT_FOUND;
     }
 
@@ -3762,6 +3791,8 @@ static NTSTATUS nt_to_unix_file_name_no_root( OBJECT_ATTRIBUTES *attr, UNICODE_S
             if (!is_unix)
             {
                 free( unix_name );
+                TRACE( "%d\n", __LINE__);
+
                 return STATUS_BAD_DEVICE_TYPE;
             }
             pos = 0;  /* fall back to unix root */
@@ -3771,6 +3802,7 @@ static NTSTATUS nt_to_unix_file_name_no_root( OBJECT_ATTRIBUTES *attr, UNICODE_S
     prefix_len++;  /* skip initial backslash */
     if (name_len > prefix_len && name[prefix_len] == '\\') prefix_len++;  /* allow a second backslash */
     nt_pos += prefix_len;
+    TRACE( "%d\n", __LINE__);
 
     status = lookup_unix_name( AT_FDCWD, attr, nt_name, nt_pos, &unix_name, unix_len,
                                pos, disposition, open_reparse, is_unix, reparse_count );
@@ -3782,6 +3814,7 @@ static NTSTATUS nt_to_unix_file_name_no_root( OBJECT_ATTRIBUTES *attr, UNICODE_S
     {
         free( unix_name );
     }
+    TRACE( "%d %d\n", __LINE__, status);
     return status;
 }
 
@@ -3804,6 +3837,8 @@ static NTSTATUS nt_to_unix_file_name( OBJECT_ATTRIBUTES *attr, UNICODE_STRING *n
     char *unix_name;
     int name_len, unix_len;
     NTSTATUS status;
+
+    TRACE( "%s\n", debugstr_us(attr->ObjectName));
 
     if (!attr->RootDirectory)  /* without root dir fall back to normal lookup */
         return nt_to_unix_file_name_no_root( attr, nt_name, name_ret, disposition, open_reparse, 0 );
@@ -4322,6 +4357,9 @@ NTSTATUS get_nt_and_unix_names( OBJECT_ATTRIBUTES *attr, UNICODE_STRING *nt_name
     ULONG lenA, lenW = attr->ObjectName->Length / sizeof(WCHAR);
     UNICODE_STRING *orig = attr->ObjectName;
     NTSTATUS status;
+
+    TRACE( "attr=%p nt_name=%s unix_name_ret=%p disp=%08x open_reparse=%d\n",
+           attr, debugstr_us(nt_name), unix_name_ret, disposition, open_reparse );
 
     nt_name->Buffer = NULL;
     *unix_name_ret = NULL;
