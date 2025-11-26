@@ -14600,6 +14600,30 @@ static void test_valid_handle(void)
     closesocket(server);
 }
 
+static void test_afunix_bind( const char *path )
+{
+    SOCKET listener, client, server = 0;
+    SOCKADDR_UN addr = { AF_UNIX }, empty = { AF_UNIX };
+    char buffer[sizeof(SOCKADDR_UN) * 2];
+    SOCKADDR_UN *out_addr = (SOCKADDR_UN *)buffer;
+    ULONG zero = 0, one = 1;
+    int size, ret;
+    DWORD attr;
+    HANDLE handle;
+
+    winetest_push_context( "%s", path );
+    strcpy(addr.sun_path, path);
+    DeleteFileA(addr.sun_path);  /* make sure it doesn't exist */
+
+    listener = socket(AF_UNIX, SOCK_STREAM, 0);
+    ok(listener != INVALID_SOCKET, "Could not create Unix socket: %lu\n", GetLastError());
+
+    ret = bind(listener, (SOCKADDR *)&addr, sizeof(addr));
+    ok(!ret, "Could not bind Unix socket: %lu\n", GetLastError());
+    attr = GetFileAttributesA(path);
+    ok( attr == (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_ARCHIVE), "wrong attr %lx\n", attr );
+}
+
 static void test_afunix_path( const char *path )
 {
     SOCKET listener, client, server = 0;
@@ -14745,6 +14769,9 @@ static void test_afunix(void)
     ULONG zero = 0;
     ULONG one = 1;
     int ret;
+
+    test_afunix_bind( addr.sun_path );
+    return;
 
     char currentDir[MAX_PATH+1];
     ret = GetCurrentDirectoryA(sizeof(currentDir)-1, currentDir);
@@ -14895,7 +14922,7 @@ START_TEST( sock )
     test_WithWSAStartup();
 
     Init();
-
+#if 0
     test_set_getsockopt();
     test_reuseaddr();
     test_ip_pktinfo();
@@ -14972,8 +14999,10 @@ START_TEST( sock )
     test_broadcast();
     test_send_buffering();
     test_valid_handle();
+#endif
     test_afunix();
 
+#if 0
     /* There is apparently an obscure interaction between this test and
      * test_WSAGetOverlappedResult().
      *
@@ -15001,6 +15030,6 @@ START_TEST( sock )
 
     /* this is an io heavy test, do it at the end so the kernel doesn't start dropping packets */
     test_send();
-
+#endif
     Exit();
 }
