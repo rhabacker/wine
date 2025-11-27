@@ -14600,6 +14600,30 @@ static void test_valid_handle(void)
     closesocket(server);
 }
 
+static void test_afunix_bind( const char *path )
+{
+    SOCKET listener, client, server = 0;
+    SOCKADDR_UN addr = { AF_UNIX }, empty = { AF_UNIX };
+    char buffer[sizeof(SOCKADDR_UN) * 2];
+    SOCKADDR_UN *out_addr = (SOCKADDR_UN *)buffer;
+    ULONG zero = 0, one = 1;
+    int size, ret;
+    DWORD attr;
+    HANDLE handle;
+
+    winetest_push_context( "%s", path );
+    strcpy(addr.sun_path, path);
+    DeleteFileA(addr.sun_path);  /* make sure it doesn't exist */
+
+    listener = socket(AF_UNIX, SOCK_STREAM, 0);
+    ok(listener != INVALID_SOCKET, "Could not create Unix socket: %lu\n", GetLastError());
+
+    ret = bind(listener, (SOCKADDR *)&addr, sizeof(addr));
+    ok(!ret, "Could not bind Unix socket: %lu\n", GetLastError());
+    attr = GetFileAttributesA(path);
+    ok( attr == (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_ARCHIVE), "wrong attr %lx\n", attr );
+}
+
 static void test_afunix_path( const char *path )
 {
     SOCKET listener, client, server = 0;
@@ -14750,6 +14774,9 @@ static void test_afunix(void)
     ret = GetCurrentDirectoryA(sizeof(currentDir)-1, currentDir);
     ok(ret, "Could not get current directory: %lu\n", GetLastError());
     winetest_printf("current directory: '%s'\n", currentDir);
+
+    test_afunix_bind( addr.sun_path );
+    return;
 
     /* Test connection and send/recv */
     listener = socket(AF_UNIX, SOCK_STREAM, 0);
