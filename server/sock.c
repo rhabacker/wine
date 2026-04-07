@@ -50,6 +50,9 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
+#ifdef HAVE_SYS_UN_H
+# include <sys/un.h>
+#endif
 #ifdef HAVE_SYS_FILIO_H
 # include <sys/filio.h>
 #endif
@@ -102,6 +105,7 @@
 #define USE_WS_PREFIX
 #include "winsock2.h"
 #include "ws2tcpip.h"
+#include "afunix.h"
 #include "tcpmib.h"
 #include "wsipx.h"
 #include "af_irda.h"
@@ -144,6 +148,7 @@ union win_sockaddr
     struct WS_sockaddr addr;
     struct WS_sockaddr_in in;
     struct WS_sockaddr_in6 in6;
+    SOCKADDR_UN un;
     struct WS_sockaddr_ipx ipx;
     SOCKADDR_IRDA irda;
 };
@@ -153,6 +158,9 @@ union unix_sockaddr
     struct sockaddr addr;
     struct sockaddr_in in;
     struct sockaddr_in6 in6;
+#ifdef HAVE_SYS_UN_H
+    struct sockaddr_un un;
+#endif
 #ifdef HAS_IPX
     struct sockaddr_ipx ipx;
 #endif
@@ -552,6 +560,23 @@ static int sockaddr_from_unix( const union unix_sockaddr *uaddr, struct WS_socka
         return sizeof(win);
     }
 
+#ifdef AF_UNIX
+    case AF_UNIX:
+    {
+        SOCKADDR_UN win = {0};
+        size_t path_len;
+
+        if (wsaddrlen < sizeof(win.sun_family)) return -1;
+        win.sun_family = WS_AF_UNIX;
+        path_len = strnlen( uaddr->un.sun_path, sizeof(uaddr->un.sun_path) );
+        if (!path_len) path_len = sizeof(win.sun_path);
+        else if (path_len < sizeof(win.sun_path)) ++path_len;
+        memcpy( win.sun_path, uaddr->un.sun_path, min( path_len, sizeof(win.sun_path) ) );
+        memcpy( wsaddr, &win, min( wsaddrlen, sizeof(win) ) );
+        return sizeof(win.sun_family) + path_len;
+    }
+#endif
+
 #ifdef HAS_IPX
     case AF_IPX:
     {
@@ -641,6 +666,19 @@ static socklen_t sockaddr_to_unix( const struct WS_sockaddr *wsaddr, int wsaddrl
 #endif
         return sizeof(uaddr->in6);
     }
+
+#ifdef AF_UNIX
+    case WS_AF_UNIX:
+    {
+        int path_len = wsaddrlen - offsetof(SOCKADDR_UN, sun_path);
+
+        if (wsaddrlen < offsetof(SOCKADDR_UN, sun_path)) return 0;
+        uaddr->un.sun_family = AF_UNIX;
+        path_len = min( max( path_len, 0 ), (int)sizeof(uaddr->un.sun_path) );
+        if (path_len > 0) memcpy( uaddr->un.sun_path, ((const SOCKADDR_UN *)wsaddr)->sun_path, path_len );
+        return offsetof(struct sockaddr_un, sun_path) + path_len;
+    }
+#endif
 
 #ifdef HAS_IPX
     case WS_AF_IPX:
@@ -742,6 +780,11 @@ static socklen_t get_unix_sockaddr_any( union unix_sockaddr *uaddr, int ws_famil
         case WS_AF_IRDA:
             uaddr->irda.sir_family = AF_IRDA;
             return sizeof(uaddr->irda);
+#endif
+#ifdef AF_UNIX
+        case WS_AF_UNIX:
+            uaddr->un.sun_family = AF_UNIX;
+            return offsetof(struct sockaddr_un, sun_path);
 #endif
         default:
             return 0;
@@ -1837,6 +1880,9 @@ static int get_unix_family( int family )
     {
         case WS_AF_INET: return AF_INET;
         case WS_AF_INET6: return AF_INET6;
+#ifdef AF_UNIX
+        case WS_AF_UNIX: return AF_UNIX;
+#endif
 #ifdef HAS_IPX
         case WS_AF_IPX: return AF_IPX;
 #endif
@@ -1864,6 +1910,8 @@ static int get_unix_type( int type )
 
 static int get_unix_protocol( int family, int protocol )
 {
+    if (!protocol) return 0;
+
     if (protocol >= WS_NSPROTO_IPX && protocol <= WS_NSPROTO_IPX + 255)
         return protocol;
 
@@ -2789,7 +2837,17 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
         unix_len = sizeof(unix_addr);
         getsockname( unix_fd, &unix_addr.addr, &unix_len );
         sock->addr_len = sockaddr_from_unix( &unix_addr, &sock->addr.addr, sizeof(sock->addr) );
-        sock->peer_addr_len = sockaddr_from_unix( &peer_addr, &sock->peer_addr.addr, sizeof(sock->peer_addr));
+        if (sock->family == WS_AF_UNIX && params->addr_len >= offsetof(SOCKADDR_UN, sun_path))
+        {
+            memset( &sock->peer_addr, 0, sizeof(sock->peer_addr) );
+            memcpy( &sock->peer_addr, addr, min( params->addr_len, (unsigned int)sizeof(SOCKADDR_UN) ) );
+            sock->peer_addr.un.sun_family = WS_AF_UNIX;
+            sock->peer_addr_len = sizeof(SOCKADDR_UN);
+        }
+        else
+        {
+            sock->peer_addr_len = sockaddr_from_unix( &peer_addr, &sock->peer_addr.addr, sizeof(sock->peer_addr) );
+        }
 
         sock->bound = 1;
 
@@ -3143,9 +3201,30 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
         {
             /* store the interface or magic loopback address instead of the
              * actual unix address */
-            if (bind_addr.addr.sa_family == AF_INET)
+            if (sock->family == WS_AF_UNIX)
+            {
+                const SOCKADDR_UN *ws_addr = (const SOCKADDR_UN *)&params->addr;
+                int path_len = in_size - sizeof(int) - offsetof(SOCKADDR_UN, sun_path);
+
+                memset( &sock->addr, 0, sizeof(sock->addr) );
+                sock->addr.un.sun_family = WS_AF_UNIX;
+                path_len = min( max( path_len, 0 ), (int)sizeof(sock->addr.un.sun_path) );
+                if (path_len > 0)
+                {
+                    path_len = strnlen( ws_addr->sun_path, path_len );
+                    memcpy( sock->addr.un.sun_path, ws_addr->sun_path, path_len );
+                }
+                sock->addr_len = sizeof(sock->addr.un.sun_family) + min( path_len + 1, (int)sizeof(sock->addr.un.sun_path) );
+            }
+            else if (bind_addr.addr.sa_family == AF_INET)
+            {
                 bind_addr.in.sin_addr = unix_addr.in.sin_addr;
-            sock->addr_len = sockaddr_from_unix( &bind_addr, &sock->addr.addr, sizeof(sock->addr) );
+                sock->addr_len = sockaddr_from_unix( &bind_addr, &sock->addr.addr, sizeof(sock->addr) );
+            }
+            else
+            {
+                sock->addr_len = sockaddr_from_unix( &bind_addr, &sock->addr.addr, sizeof(sock->addr) );
+            }
         }
 
         update_addr_usage( sock, &bind_addr, v6only );

@@ -28,6 +28,9 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
+#ifdef HAVE_SYS_UN_H
+# include <sys/un.h>
+#endif
 #include <unistd.h>
 #ifdef HAVE_IFADDRS_H
 # include <ifaddrs.h>
@@ -76,6 +79,7 @@
 #include "mstcpip.h"
 #include "ws2tcpip.h"
 #include "wsipx.h"
+#include "afunix.h"
 #include "af_irda.h"
 #include "wine/afd.h"
 
@@ -99,6 +103,9 @@ union unix_sockaddr
     struct sockaddr addr;
     struct sockaddr_in in;
     struct sockaddr_in6 in6;
+#ifdef HAVE_SYS_UN_H
+    struct sockaddr_un un;
+#endif
 #ifdef HAS_IPX
     struct sockaddr_ipx ipx;
 #endif
@@ -233,6 +240,19 @@ static socklen_t sockaddr_to_unix( const struct WS_sockaddr *wsaddr, int wsaddrl
         return sizeof(uaddr->in6);
     }
 
+#ifdef AF_UNIX
+    case WS_AF_UNIX:
+    {
+        int path_len = wsaddrlen - offsetof(SOCKADDR_UN, sun_path);
+
+        if (wsaddrlen < offsetof(SOCKADDR_UN, sun_path)) return 0;
+        uaddr->un.sun_family = AF_UNIX;
+        path_len = min( max( path_len, 0 ), (int)sizeof(uaddr->un.sun_path) );
+        if (path_len > 0) memcpy( uaddr->un.sun_path, ((const SOCKADDR_UN *)wsaddr)->sun_path, path_len );
+        return offsetof(struct sockaddr_un, sun_path) + path_len;
+    }
+#endif
+
 #ifdef HAS_IPX
     case WS_AF_IPX:
     {
@@ -327,6 +347,23 @@ static int sockaddr_from_unix( const union unix_sockaddr *uaddr, struct WS_socka
         memcpy( wsaddr, &win, sizeof(win) );
         return sizeof(win);
     }
+
+#ifdef AF_UNIX
+    case AF_UNIX:
+    {
+        SOCKADDR_UN win = {0};
+        size_t path_len;
+
+        if (wsaddrlen < sizeof(win.sun_family)) return -1;
+        win.sun_family = WS_AF_UNIX;
+        path_len = strnlen( uaddr->un.sun_path, sizeof(uaddr->un.sun_path) );
+        if (!path_len) path_len = sizeof(win.sun_path);
+        else if (path_len < sizeof(win.sun_path)) ++path_len;
+        memcpy( win.sun_path, uaddr->un.sun_path, min( path_len, sizeof(win.sun_path) ) );
+        memcpy( wsaddr, &win, min( wsaddrlen, sizeof(win) ) );
+        return sizeof(win.sun_family) + path_len;
+    }
+#endif
 
 #ifdef HAS_IPX
     case AF_IPX:
