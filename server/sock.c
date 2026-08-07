@@ -2802,6 +2802,13 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
                 else
                     base_name = unix_path;
 
+                if (strlen( base_name ) >= sizeof(unix_addr.un.sun_path))
+                {
+                    free( unix_path );
+                    set_win32_error( WSAEINVAL );
+                    return;
+                }
+
                 if (chdir( unix_path ) == -1)
                 {
                     set_error( sock_get_ntstatus( errno ) );
@@ -2873,14 +2880,14 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
             }
         }
 
+        if (sock->family == WS_AF_UNIX && *addr->sa_data)
+            fchdir(server_dir_fd);
+
         if (ret < 0 && errno != EINPROGRESS)
         {
             set_error( sock_get_ntstatus( errno ) );
             return;
         }
-
-        if (sock->family == WS_AF_UNIX && *addr->sa_data)
-            fchdir(server_dir_fd);
 
         /* a connected or connecting socket can no longer be accepted into */
         allow_fd_caching( sock->fd );
@@ -3184,6 +3191,13 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
                 }
                 else
                     base_name = unix_path;
+
+                if (strlen( base_name ) >= sizeof(unix_addr.un.sun_path))
+                {
+                    free( unix_path );
+                    set_win32_error( WSAEINVAL );
+                    return;
+                }
 
                 if (chdir( unix_path ) == -1)
                 {
