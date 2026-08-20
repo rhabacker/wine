@@ -14915,6 +14915,135 @@ static void test_afunix_path( const char *path )
     winetest_pop_context();
 }
 
+static void test_afunix_client( const char *path )
+{
+    SOCKADDR_UN addr;
+    SOCKET client;
+    DWORD peer_pid, bytes;
+    HANDLE output = GetStdHandle( STD_OUTPUT_HANDLE );
+
+    client = socket( AF_UNIX, SOCK_STREAM, 0 );
+    ok( client != INVALID_SOCKET, "socket failed: %u\n", WSAGetLastError() );
+
+    memset( &addr, 0, sizeof(addr) );
+    addr.sun_family = AF_UNIX;
+    strcpy( addr.sun_path, path );
+
+    ok( !connect(client, (SOCKADDR *)&addr, sizeof(addr)),
+        "connect failed: %u\n", WSAGetLastError() );
+
+    peer_pid = 0;
+    bytes = 0;
+    ok( !WSAIoctl(client, SIO_AF_UNIX_GETPEERPID, NULL, 0,
+                  &peer_pid, sizeof(peer_pid), &bytes, NULL, NULL),
+        "WSAIoctl failed: %u\n", WSAGetLastError() );
+    ok( bytes == sizeof(peer_pid), "unexpected result size %lu\n", bytes );
+
+    WriteFile( output, &peer_pid, sizeof(peer_pid), &bytes, NULL );
+    closesocket( client );
+}
+
+static void test_afunix_peerpid( const char *path )
+{
+    SECURITY_ATTRIBUTES sa = { sizeof(sa), NULL, TRUE };
+    STARTUPINFOA si = { sizeof(si) };
+    PROCESS_INFORMATION pi;
+    SOCKADDR_UN addr;
+    SOCKET listener = INVALID_SOCKET, accepted = INVALID_SOCKET;
+    HANDLE pipe_read = NULL, pipe_write = NULL;
+    DWORD server_pid, client_pid = 0, reported_server_pid = 0;
+    DWORD bytes;
+    char **argv, command[MAX_PATH * 2];
+
+    server_pid = GetCurrentProcessId();
+
+    /* Create listening socket. */
+    listener = socket(AF_UNIX, SOCK_STREAM, 0);
+    ok(listener != INVALID_SOCKET, "socket failed: %u\n", WSAGetLastError());
+    if (listener == INVALID_SOCKET) goto done;
+
+    /* TODO: initialize path using the existing AF_UNIX test infrastructure. */
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strcpy(addr.sun_path, path);
+
+    ok(!bind(listener, (SOCKADDR *)&addr, sizeof(addr)),
+       "bind failed: %u\n", WSAGetLastError());
+    if (listen(listener, 1))
+    {
+        ok(0, "listen failed: %u\n", WSAGetLastError());
+        goto done;
+    }
+
+    /* Create pipe for receiving the client-side PID result. */
+    ok(CreatePipe(&pipe_read, &pipe_write, &sa, 0),
+       "CreatePipe failed: %lu\n", GetLastError());
+    if (!pipe_read || !pipe_write) goto done;
+
+    SetHandleInformation(pipe_read, HANDLE_FLAG_INHERIT, 0);
+
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdOutput = pipe_write;
+    si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+
+    winetest_get_mainargs(&argv);
+    sprintf(command, "\"%s\" sock afunix client \"%s\"", argv[0], path);
+
+     if (!CreateProcessA(argv[0], command, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi))
+    {
+        ok(FALSE, "CreateProcess failed: %lu\n", GetLastError());
+        goto done;
+    }
+
+    CloseHandle(pipe_write);
+    pipe_write = NULL;
+
+    if (!pi.hProcess) goto done;
+
+    /* Accept client connection. */
+    accepted = accept(listener, NULL, NULL);
+    ok(accepted != INVALID_SOCKET, "accept failed: %u\n", WSAGetLastError());
+    if (accepted == INVALID_SOCKET) goto wait_child;
+
+    /* Check PID of the client process. */
+    bytes = 0;
+    ok(!WSAIoctl(accepted, SIO_AF_UNIX_GETPEERPID, NULL, 0,
+                 &client_pid, sizeof(client_pid), &bytes, NULL, NULL),
+       "WSAIoctl failed: %u\n", WSAGetLastError());
+
+    ok(bytes == sizeof(client_pid), "unexpected result size %lu\n", bytes);
+    ok(client_pid == pi.dwProcessId,
+       "server returned peer PID %lu, expected client PID %lu\n",
+       client_pid, pi.dwProcessId);
+
+    /* Check PID reported by the client process. */
+    bytes = 0;
+    ok(ReadFile(pipe_read, &reported_server_pid,
+                sizeof(reported_server_pid), &bytes, NULL),
+       "ReadFile failed: %lu\n", GetLastError());
+
+    ok(bytes == sizeof(reported_server_pid),
+       "unexpected pipe result size %lu\n", bytes);
+
+    ok(reported_server_pid == server_pid,
+       "client returned peer PID %lu, expected server PID %lu\n",
+       reported_server_pid, server_pid);
+
+wait_child:
+    WaitForSingleObject(pi.hProcess, 5000);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+
+done:
+    if (pipe_write) CloseHandle(pipe_write);
+    if (pipe_read) CloseHandle(pipe_read);
+    if (accepted != INVALID_SOCKET) closesocket(accepted);
+    if (listener != INVALID_SOCKET) closesocket(listener);
+
+    DeleteFileA(path);
+}
+
 static void test_afunix(void)
 {
     SOCKET listener, client, server = 0;
@@ -14930,6 +15059,9 @@ static void test_afunix(void)
     ULONG zero = 0;
     ULONG one = 1;
     int ret;
+    DWORD pid;
+    DWORD bytesReturned;
+    BOOL enableGetPeerPidTests = TRUE;
 
     /* Test connection and send/recv */
     listener = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -15023,6 +15155,24 @@ static void test_afunix(void)
     ok(ret == sizeof(serverBuf), "Incorrect return value from recvfrom: %d\n", ret);
     ok(!memcmp(serverBuf, clientBuf, sizeof(clientBuf)), "Data mismatch over Unix socket\n");
 
+    /* test WSAIoctl(SIO_AF_UNIX_GETPEERPID) with peer in same process */
+    ret = WSAIoctl(listener, SIO_AF_UNIX_GETPEERPID, NULL, 0, &pid, sizeof(pid), &bytesReturned, NULL, NULL);
+    if (ret == SOCKET_ERROR && WSAGetLastError() == WSAEAFNOSUPPORT)
+    {
+        win_skip("WSAIoctl(SIO_AF_UNIX_GETPEERPID) not supported on this platform\n");
+        enableGetPeerPidTests = FALSE;
+    }
+    if(enableGetPeerPidTests)
+    {
+        ok(ret == SOCKET_ERROR && WSAGetLastError() == WSAENOTCONN, "failed to call WSAioctl %u\n", WSAGetLastError());
+        ret = WSAIoctl(server, SIO_AF_UNIX_GETPEERPID, NULL, 0, &pid, sizeof(pid), &bytesReturned, NULL, NULL);
+        ok(!ret, "failed to get WSAioctl, error %u\n", WSAGetLastError());
+        ok(pid == GetCurrentProcessId(), "server returned peer PID %ld, expected client PID %ld\n", pid, GetCurrentProcessId());
+        ret = WSAIoctl(client,  SIO_AF_UNIX_GETPEERPID, NULL, 0, &pid, sizeof(pid), &bytesReturned, NULL, NULL);
+        ok(!ret, "failed to get WSAioctl, error %u\n", WSAGetLastError());
+        ok(pid == GetCurrentProcessId(), "client returned peer PID %ld, expected server PID %ld\n", pid, GetCurrentProcessId());
+    }
+
     closesocket(listener);
     closesocket(client);
     closesocket(server);
@@ -15063,11 +15213,17 @@ static void test_afunix(void)
     RtlDosPathNameToNtPathName_U(pathW, &ntPath, NULL, NULL);
     RtlUnicodeToMultiByteN(path, sizeof(addr.sun_path), NULL, ntPath.Buffer, ntPath.Length + sizeof(WCHAR));
     test_afunix_path( path );
+    if(enableGetPeerPidTests)
+    {
+        test_afunix_peerpid( path );
+    }
 }
 
 START_TEST( sock )
 {
     int i;
+    char **argv;
+    int argc;
 
 /* Leave these tests at the beginning. They depend on WSAStartup not having been
  * called, which is done by Init() below. */
@@ -15075,6 +15231,18 @@ START_TEST( sock )
     test_WithWSAStartup();
 
     Init();
+
+    argc = winetest_get_mainargs( &argv );
+    if (argc >= 3 && !strcmp( argv[2], "afunix" ))
+    {
+        if (argc >= 5 && !strcmp( argv[3], "client" ))
+            test_afunix_client( argv[4] );
+        else
+            test_afunix();
+
+        Exit();
+        return;
+    }
 
     test_set_getsockopt();
     test_reuseaddr();
