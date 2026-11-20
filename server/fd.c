@@ -1982,42 +1982,52 @@ struct fd *open_fd( struct fd *root, const char *name, struct unicode_str nt_nam
             goto error;
         }
 
-        if (stat( name, &st ))
-        {
-            file_set_error();
-            goto error;
-        }
-
         /* POSIX requires that open(2) throws EOPNOTSUPP when `path` is a Unix
          * socket. BSD throws EOPNOTSUPP in this case and the additional case of
          * O_SHLOCK or O_EXLOCK being passed when `path` resides on a filesystem
          * without lock support. Contrary to POSIX, Linux returns ENXIO in this
          * case, so we also check that error code here.
          */
-        if ((open_errno == EOPNOTSUPP || open_errno == ENXIO) && S_ISSOCK(st.st_mode))
+        if (open_errno == EOPNOTSUPP || open_errno == ENXIO)
         {
-            /* Windows exposes a bound AF_UNIX socket as a reparse point: opening it
-             * without FILE_OPEN_REPARSE_POINT fails with STATUS_IO_REPARSE_TAG_NOT_HANDLED,
-             * and with the flag it yields a handle that only carries metadata, which is
-             * what O_PATH gives us here.
-             */
-            if (options & FILE_DELETE_ON_CLOSE)
-                ; /* no error, go to regular deletion code path */
-            else if (!(options & FILE_OPEN_REPARSE_POINT))
+            if (stat( name, &st ))
             {
-                set_error( STATUS_IO_REPARSE_TAG_NOT_HANDLED );
+                file_set_error();
                 goto error;
+            }
+
+            errno = open_errno;
+
+            if (S_ISSOCK(st.st_mode))
+            {
+                /* Windows exposes a bound AF_UNIX socket as a reparse point: opening it
+                 * without FILE_OPEN_REPARSE_POINT fails with STATUS_IO_REPARSE_TAG_NOT_HANDLED,
+                 * and with the flag it yields a handle that only carries metadata, which is
+                 * what O_PATH gives us here.
+                 */
+                if (options & FILE_DELETE_ON_CLOSE)
+                    ; /* no error, go to regular deletion code path */
+                else if (!(options & FILE_OPEN_REPARSE_POINT))
+                {
+                    set_error( STATUS_IO_REPARSE_TAG_NOT_HANDLED );
+                    goto error;
+                }
+                else
+                {
+#ifdef O_PATH
+                    fd->unix_fd = open( name, O_PATH );
+#endif
+                    if (fd->unix_fd == -1)
+                    {
+                        file_set_error();
+                        goto error;
+                    }
+                }
             }
             else
             {
-#ifdef O_PATH
-                fd->unix_fd = open( name, O_PATH );
-#endif
-                if (fd->unix_fd == -1)
-                {
-                    file_set_error();
-                    goto error;
-                }
+                file_set_error();
+                goto error;
             }
         }
         else
