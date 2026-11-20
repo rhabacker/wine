@@ -2100,8 +2100,6 @@ struct fd *open_fd( struct fd *root, const char *name, struct unicode_str nt_nam
             }
             if (fd->unix_fd != -1)
                 ftruncate( fd->unix_fd, 0 );
-            else
-                truncate( fd->unix_name, 0 );
         }
     }
     else  /* special file */
