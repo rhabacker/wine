@@ -2078,6 +2078,12 @@ NTSTATUS sock_ioctl( HANDLE handle, HANDLE event, PIO_APC_ROUTINE apc, void *apc
             status = STATUS_BAD_DEVICE_TYPE;
             break;
 
+        case IOCTL_AFD_WINE_GETPEERPID:
+            if (in_size) FIXME( "unexpected input size %u\n", in_size );
+
+            status = STATUS_BAD_DEVICE_TYPE;
+            break;
+
         case IOCTL_AFD_WINE_GET_SO_BROADCAST:
             return do_getsockopt( handle, io, SOL_SOCKET, SO_BROADCAST, out_buffer, out_size );
 

@@ -2482,6 +2482,7 @@ static const char *debugstr_wsaioctl(DWORD code)
         IOCTL_NAME(SIO_TRANSLATE_HANDLE);
         IOCTL_NAME(SIO_UDP_CONNRESET);
         IOCTL_NAME(SIO_UDP_NETRESET);
+        IOCTL_NAME(SIO_AF_UNIX_GETPEERPID);
     }
 #undef IOCTL_NAME
 
@@ -2960,6 +2961,17 @@ INT WINAPI WSAIoctl(SOCKET s, DWORD code, LPVOID in_buff, DWORD in_size, LPVOID 
                                  NULL, 0, ret_size, overlapped, completion );
         if (overlapped) ret = ERROR_IO_PENDING;
         if (!ret) *ret_size = sizeof(SOCKET);
+        SetLastError( ret );
+        return ret ? -1 : 0;
+    }
+
+    case SIO_AF_UNIX_GETPEERPID:
+    {
+        DWORD ret;
+
+        ret = server_ioctl_sock( s, IOCTL_AFD_WINE_GETPEERPID, NULL, 0,
+                                 out_buff, out_size, ret_size, overlapped, completion );
+        if (!ret) *ret_size = sizeof(DWORD);
         SetLastError( ret );
         return ret ? -1 : 0;
     }

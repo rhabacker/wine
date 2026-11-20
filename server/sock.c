@@ -232,6 +232,14 @@ struct bound_addr
     int reuse_count;
 };
 
+static struct list unix_bound_sockets = LIST_INIT( unix_bound_sockets );
+
+struct unix_pending_peer
+{
+    struct list  entry;
+    process_id_t win_pid;
+};
+
 #define MAX_ICMP_HISTORY_LENGTH 8
 
 #define MIN_RCVBUF 65536
@@ -303,6 +311,11 @@ struct sock
     unsigned int        reset : 1;   /* did we get a TCP reset? */
     unsigned int        reuseaddr : 1; /* winsock SO_REUSEADDR option value */
     unsigned int        exclusiveaddruse : 1; /* winsock SO_EXCLUSIVEADDRUSE option value */
+    process_id_t        win_pid;       /* PID of the process owning the socket */
+    process_id_t        peer_win_pid;  /* PID of the process at the other end */
+    char               *unix_full_path;
+    struct list         unix_bind_entry;
+    struct list         pending_peers;
 };
 
 static int is_tcp_socket( struct sock *sock )
@@ -459,6 +472,83 @@ static void update_addr_usage( struct sock *sock, const union unix_sockaddr *add
     if (!ipv4addr_from_v6( &v4addr, &addr->in6, sock->exclusiveaddruse )) return;
 
     sock->bound_addr[1] = register_bound_address( sock, &v4addr );
+}
+
+static void init_unix_peers( struct sock *sock )
+{
+    sock->win_pid = 0;
+    sock->peer_win_pid = 0;
+    sock->unix_full_path = NULL;
+    list_init( &sock->unix_bind_entry );
+    list_init( &sock->pending_peers );
+}
+
+static void destroy_unix_peers( struct sock *sock)
+{
+    struct unix_pending_peer *peer, *next;
+
+    if (sock->unix_full_path)
+    {
+        list_remove( &sock->unix_bind_entry );
+        free( sock->unix_full_path );
+    }
+
+    LIST_FOR_EACH_ENTRY_SAFE( peer, next, &sock->pending_peers, struct unix_pending_peer, entry )
+    {
+        list_remove( &peer->entry );
+        free( peer );
+    }
+}
+
+static struct sock *find_unix_listener( const char *unix_full_path )
+{
+    struct sock *sock;
+
+    if (!unix_full_path) return NULL;
+
+    LIST_FOR_EACH_ENTRY( sock, &unix_bound_sockets, struct sock, unix_bind_entry )
+    {
+        if (sock->state == SOCK_LISTENING &&
+            sock->unix_full_path &&
+            !strcmp( sock->unix_full_path, unix_full_path ))
+        {
+            return sock;
+        }
+    }
+    return NULL;
+}
+
+static void link_unix_connect_peer( struct sock *client_sock, const char *unix_full_path )
+{
+    struct sock *listener;
+    struct unix_pending_peer *peer;
+
+    listener = find_unix_listener( unix_full_path );
+    if (!listener) return;
+
+    /* Client immediately gets the listener's win_pid */
+    client_sock->peer_win_pid = listener->win_pid;
+
+    /* Queue the client's win_pid for the listener's next accept() */
+    if ((peer = mem_alloc( sizeof(*peer) )))
+    {
+        peer->win_pid = client_sock->win_pid;
+        list_add_tail( &listener->pending_peers, &peer->entry );
+    }
+}
+
+static void pop_unix_connect_peer( struct sock *acceptsock, struct sock *sock )
+{
+    struct list *head;
+    struct unix_pending_peer *peer;
+
+    if ((head = list_head( &sock->pending_peers )))
+    {
+        peer = LIST_ENTRY( head, struct unix_pending_peer, entry );
+        acceptsock->peer_win_pid = peer->win_pid;
+        list_remove( &peer->entry );
+        free( peer );
+    }
 }
 
 static void sock_dump( struct object *obj, int verbose );
@@ -1765,6 +1855,7 @@ static void sock_destroy( struct object *obj )
     free_async_queue( &sock->poll_q );
     if (sock->event) release_object( sock->event );
     if (sock->fd) release_object( sock->fd );
+    destroy_unix_peers ( sock );
 }
 
 static struct sock *create_socket(void)
@@ -1818,6 +1909,7 @@ static struct sock *create_socket(void)
     init_async_queue( &sock->poll_q );
     memset( sock->errors, 0, sizeof(sock->errors) );
     list_init( &sock->accept_list );
+    init_unix_peers( sock );
     return sock;
 }
 
@@ -2177,6 +2269,9 @@ static struct sock *accept_socket( struct sock *sock )
         }
     }
 
+    acceptsock->win_pid = sock->win_pid;
+    pop_unix_connect_peer( acceptsock, sock );
+
     clear_error();
     sock->pending_events &= ~AFD_POLL_ACCEPT;
     sock->reported_events &= ~AFD_POLL_ACCEPT;
@@ -2226,6 +2321,7 @@ static int accept_into_socket( struct sock *sock, struct sock *acceptsock )
     acceptsock->wparam  = 0;
     acceptsock->deferred = NULL;
     acceptsock->connect_time = current_time;
+
     fd_copy_completion( acceptsock->fd, newfd );
     release_object( acceptsock->fd );
     acceptsock->fd = newfd;
@@ -2259,6 +2355,8 @@ static int accept_into_socket( struct sock *sock, struct sock *acceptsock )
             }
         }
     }
+    acceptsock->win_pid = sock->win_pid;
+    pop_unix_connect_peer( acceptsock, sock );
 
     clear_error();
     sock->pending_events &= ~AFD_POLL_ACCEPT;
@@ -2726,6 +2824,9 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
 
         sock->state = SOCK_LISTENING;
 
+        sock->win_pid = current->process->id;
+        sock->peer_win_pid = 0;
+
         /* a listening socket can no longer be accepted into */
         allow_fd_caching( sock->fd );
 
@@ -2742,6 +2843,7 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
         struct connect_req *req;
         socklen_t unix_len;
         int send_len, ret;
+        char *full_unix_path = NULL;
 
         if (get_req_data_size() < sizeof(*params) ||
             get_req_data_size() - sizeof(*params) < params->addr_len)
@@ -2805,6 +2907,13 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
                 memcpy( unix_path, (char *)(params + 1) + params->addr_len, unix_path_len );
                 unix_path[unix_path_len] = '\0';
 
+                if (!(full_unix_path = mem_alloc( unix_path_len + 1 )))
+                {
+                    free( unix_path );
+                    return;
+                }
+                memcpy( full_unix_path, unix_path, unix_path_len + 1 );
+
                 base_name = strrchr(unix_path, '/');
                 if (base_name)
                 {
@@ -2817,6 +2926,7 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
                 if (strlen( base_name ) >= sizeof(unix_addr.un.sun_path))
                 {
                     free( unix_path );
+                    free( full_unix_path );
                     set_win32_error( WSAEINVAL );
                     return;
                 }
@@ -2825,6 +2935,7 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
                 {
                     set_error( sock_get_ntstatus( errno ) );
                     free( unix_path );
+                    free( full_unix_path );
                     return;
                 }
 
@@ -2849,6 +2960,7 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
 
         if (!unix_len)
         {
+            free( full_unix_path );
             set_error( STATUS_INVALID_ADDRESS );
             return;
         }
@@ -2897,6 +3009,7 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
 
         if (ret < 0 && errno != EINPROGRESS)
         {
+            free( full_unix_path );
             set_error( sock_get_ntstatus( errno ) );
             return;
         }
@@ -2917,6 +3030,13 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
             sock->peer_addr_len = sockaddr_from_unix( &peer_addr, &sock->peer_addr.addr, sizeof(sock->peer_addr));
         }
         sock->bound = 1;
+
+        sock->win_pid = current->process->id;
+        if (sock->family == WS_AF_UNIX)
+        {
+            link_unix_connect_peer( sock, full_unix_path );
+            free( full_unix_path );
+        }
 
         if (!ret)
         {
@@ -3158,6 +3278,7 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
         socklen_t unix_len;
         int v6only = 1;
         int unix_path_len = 0;
+        char *full_unix_path = NULL;
 
         /* the ioctl is METHOD_NEITHER, so ntdll gives us the output buffer as
          * input */
@@ -3195,6 +3316,13 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
                 memcpy( unix_path, (char *)(&params->addr) + sizeof(struct WS_sockaddr_un), unix_path_len );
                 unix_path[unix_path_len] = '\0';
 
+                if (!(full_unix_path = mem_alloc( unix_path_len + 1 )))
+                {
+                    free( unix_path );
+                    return;
+                }
+                memcpy( full_unix_path, unix_path, unix_path_len + 1 );
+
                 base_name = strrchr(unix_path, '/');
                 if (base_name)
                 {
@@ -3207,6 +3335,7 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
                 if (strlen( base_name ) >= sizeof(unix_addr.un.sun_path))
                 {
                     free( unix_path );
+                    free( full_unix_path );
                     set_win32_error( WSAEINVAL );
                     return;
                 }
@@ -3214,6 +3343,7 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
                 if (chdir( unix_path ) == -1)
                 {
                     free( unix_path );
+                    free( full_unix_path );
                     set_error( sock_get_ntstatus( errno ) );
                     return;
                 }
@@ -3232,6 +3362,7 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
 
         if (!unix_len)
         {
+            free( full_unix_path );
             set_error( STATUS_INVALID_ADDRESS );
             return;
         }
@@ -3266,7 +3397,10 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
 #endif
 
         if (check_addr_usage( sock, &bind_addr, v6only ))
+        {
+            free( full_unix_path );
             return;
+        }
 
 #ifdef HAS_BLUETOOTH
         if (unix_addr.rfcomm.rc_family == AF_BLUETOOTH
@@ -3314,7 +3448,10 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
             {
                 set_error( sock_get_ntstatus( errno ) );
                 if (sock->family == WS_AF_UNIX && *params->addr.sa_data)
+                {
                     fchdir(server_dir_fd);
+                    free( full_unix_path );
+                }
                 return;
             }
         }
@@ -3340,11 +3477,19 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
 
         update_addr_usage( sock, &bind_addr, v6only );
 
+        if (full_unix_path)
+        {
+            sock->unix_full_path = full_unix_path; /* ownership transferred to sock */
+            list_add_tail( &unix_bound_sockets, &sock->unix_bind_entry );
+        }
+
         if (get_reply_max_size() >= sock->addr_len)
             set_reply_data( &sock->addr, sock->addr_len );
 
         if (sock->family == WS_AF_UNIX && *params->addr.sa_data)
+        {
             fchdir(server_dir_fd);
+        }
         return;
     }
 
@@ -3405,6 +3550,30 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
         }
 
         set_reply_data( &sock->peer_addr, sock->peer_addr_len );
+        return;
+
+    case IOCTL_AFD_WINE_GETPEERPID:
+        if (sock->state != SOCK_CONNECTED &&
+            sock->state != SOCK_CONNECTING &&
+            sock->state != SOCK_CONNECTIONLESS)
+        {
+            set_error( STATUS_INVALID_CONNECTION );
+            return;
+        }
+
+        if (sock->family != WS_AF_UNIX)
+        {
+            set_error( STATUS_INVALID_DEVICE_REQUEST );
+            return;
+        }
+
+        if (!sock->peer_win_pid)
+        {
+            set_error( STATUS_INVALID_CONNECTION );
+            return;
+        }
+
+        set_reply_data( &sock->peer_win_pid, sizeof(sock->peer_win_pid) );
         return;
 
     case IOCTL_AFD_WINE_DEFER:
